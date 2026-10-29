@@ -11,6 +11,7 @@
   Cloud.sb = sb;
   const pub = (bucket, path) => path ? sb.storage.from(bucket).getPublicUrl(path).data.publicUrl : null;
   Cloud.url = pub;
+  const dl = (bucket, path) => path ? sb.storage.from(bucket).getPublicUrl(path, { download: path.split("/").pop() }).data.publicUrl : null;
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   const fail = (err, what) => { const e = new Error((what ? what + ": " : "") + (err?.message || err)); e.code = err?.code || err?.statusCode; throw e; };
 
@@ -57,14 +58,21 @@
   };
 
   /* ---------- Đọc dữ liệu ---------- */
+  // bảng mới (migration 003): thiếu bảng thì coi như rỗng và nhắc chạy migration
+  const soft = async q => { const r = await q; if (r.error && /does not exist|schema cache|42P01|PGRST20|column/i.test((r.error.message || "") + (r.error.code || ""))){ Cloud.needsMigration = true; return { data: [] }; } return r; };
   Cloud.load = async () => {
-    const [m, f, g, p] = await Promise.all([
+    Cloud.needsMigration = false;
+    const [m, f, g, p, t, ms, h] = await Promise.all([
       sb.from("members").select("id,name,color").order("name"),
       sb.from("fonts").select("id,name,category,role,use_case,vn_support,license,created_by,font_files(id,weight,style,file_name,path,size_bytes,sha1)").order("created_at", { ascending: false }),
       sb.from("guidelines").select("*, guideline_versions(*)").order("updated_at", { ascending: false }),
-      sb.from("projects").select("*").order("done_at", { ascending: false }).limit(500),
+      sb.from("projects").select("*").order("done_at", { ascending: false }).limit(3000),
+      soft(sb.from("templates").select("*").order("updated_at", { ascending: false })),
+      soft(sb.from("mascots").select("*").order("created_at", { ascending: true })),
+      soft(sb.from("hidden_items").select("kind,key")),
     ]);
-    for (const r of [m, f, g, p]) if (r.error) fail(r.error, "Không tải được dữ liệu");
+    for (const r of [m, f, g, p, t, ms, h]) if (r.error) fail(r.error, "Không tải được dữ liệu");
+    if (p.data[0] && !("pinned" in p.data[0])) Cloud.needsMigration = true;
     Cloud.members = m.data; Cloud.fontsCache = f.data; Cloud.guidesCache = g.data;
     const memberName = id => m.data.find(x => x.id === id)?.name || "Thành viên";
     return {
@@ -72,6 +80,10 @@
       fonts: f.data.map(r => ({ ...r, by: memberName(r.created_by), files: (r.font_files || []).sort((a,b) => a.weight - b.weight).map(x => ({ ...x, url: pub("fonts", x.path) })) })),
       guidelines: g.data.map(r => ({ ...r, by: memberName(r.created_by), url: pub("guidelines", r.path), cover: pub("guidelines", r.cover_path), versions: (r.guideline_versions || []).sort((a,b) => b.created_at.localeCompare(a.created_at)).map(v => ({ ...v, by: memberName(v.created_by) })) })),
       projects: p.data.map(r => ({ ...r, thumb: pub("thumbs", r.thumb_path) })),
+      templates: t.data.map(r => ({ ...r, by: memberName(r.updated_by || r.created_by), thumb: pub("thumbs", r.thumb_path) })),
+      mascots: ms.data.map(r => ({ ...r, by: memberName(r.created_by), img: pub("mascots", r.thumb_path), img3: pub("mascots", r.thumb3d_path),
+        pngUrl: dl("mascots", r.png_path), aiUrl: dl("mascots", r.ai_path), url3: dl("mascots", r.render3d_path) })),
+      hidden: h.data,
     };
   };
 
@@ -141,6 +153,67 @@
     }
     const r = await sb.from("guidelines").update({ title: info.title, category: info.cat, description: info.desc || null, updated_at: new Date().toISOString() }).eq("id", g.cloudId);
     if (r.error) fail(r.error, info.title);
+  };
+
+  /* ---------- Xoá / ẩn ---------- */
+  Cloud.del = async (table, id, files) => {
+    const r = await sb.from(table).delete().eq("id", id).select("id");
+    if (r.error) fail(r.error);
+    if (!r.data?.length) fail("Không có quyền xoá mục này. Quản trị viên cần chạy migration-003 trong Supabase.");
+    const byBucket = {};
+    (files || []).forEach(([b, path]) => path && (byBucket[b] = byBucket[b] || []).push(path));
+    for (const [b, paths] of Object.entries(byBucket)) await sb.storage.from(b).remove(paths).catch(() => {});
+  };
+  Cloud.hide = async (kind, key) => {
+    const r = await sb.from("hidden_items").upsert({ kind, key }, { onConflict: "kind,key", ignoreDuplicates: true });
+    if (r.error) fail(r.error, "Ẩn mục có sẵn");
+  };
+
+  /* ---------- Template ---------- */
+  Cloud.saveTemplate = async (info, thumbBlob, id) => {
+    let thumb_path;
+    if (thumbBlob){ const path = `tpl-${uid()}.webp`; const u = await sb.storage.from("thumbs").upload(path, thumbBlob, { contentType: "image/webp" }); if (u.error) fail(u.error, "Ảnh thumbnail"); thumb_path = path; }
+    const row = { title: info.title, category: info.cat, description: info.desc || null, link: info.link, tool: info.tool, sizes: info.size || null, tags: info.tags, updated_at: new Date().toISOString(), updated_by: Cloud.user.id };
+    if (thumb_path) row.thumb_path = thumb_path;
+    const r = id ? await sb.from("templates").update(row).eq("id", id).select("id") : await sb.from("templates").insert(row).select("id");
+    if (r.error) fail(r.error, info.title);
+    if (!r.data?.length) fail("Không có quyền sửa template này.");
+  };
+
+  /* ---------- Mascot ---------- */
+  Cloud.saveMascot = async (info, f) => {
+    const dir = uid(), done = [];
+    const put = async (name, file, type) => {
+      if (!file) return null;
+      const path = `${dir}/${name}`;
+      const u = await sb.storage.from("mascots").upload(path, file, { contentType: type || file.type || "application/octet-stream", upsert: false });
+      if (u.error){ if (done.length) await sb.storage.from("mascots").remove(done).catch(() => {}); fail(u.error, name); }
+      done.push(path); return path;
+    };
+    const ext = (f.ai.name.split(".").pop() || "ai").toLowerCase();
+    const row = {
+      name: info.name, grp: info.group, use_case: info.use || null,
+      png_path: await put(`${info.name.replace(/[\/]/g, "-")}.png`, f.png, "image/png"),
+      ai_path: await put(`${info.name.replace(/[\/]/g, "-")}.${ext}`, f.ai, ext === "pdf" ? "application/pdf" : ext === "svg" ? "image/svg+xml" : "application/postscript"),
+      thumb_path: await put("thumb.webp", f.thumb, "image/webp"),
+      render3d_path: await put(`${info.name.replace(/[\/]/g, "-")}-3d.${(f.r3d?.name.split(".").pop() || "png").toLowerCase()}`, f.r3d),
+      thumb3d_path: await put("thumb-3d.webp", f.thumb3, "image/webp"),
+    };
+    const r = await sb.from("mascots").insert(row);
+    if (r.error){ await sb.storage.from("mascots").remove(done).catch(() => {}); fail(r.error, info.name); }
+  };
+
+  /* ---------- Task: ghim + nhập CSV ---------- */
+  Cloud.setPinned = async (id, pinned) => {
+    const r = await sb.from("projects").update({ pinned }).eq("id", id).select("id");
+    if (r.error) fail(r.error); if (!r.data?.length) fail("Không có quyền ghim. Quản trị viên cần chạy migration-003.");
+  };
+  Cloud.importProjects = async (list) => {
+    const rows = list.map(x => ({ external_id: x.code, code: x.code, source: "jira", title: x.title, type: x.type, people: x.people, tags: x.tags, link: x.link || null, done_at: x.date, status: x.status || null }));
+    for (let i = 0; i < rows.length; i += 200){
+      const r = await sb.from("projects").upsert(rows.slice(i, i + 200), { onConflict: "external_id" });
+      if (r.error) fail(r.error, "Nhập CSV");
+    }
   };
 
   /* ---------- Task ---------- */
