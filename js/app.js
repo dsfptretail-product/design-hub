@@ -1661,53 +1661,18 @@ document.addEventListener("keydown", e => {
 });
 
 
-/* ---------- Tổng quan: giới thiệu + mục nổi bật ---------- */
+/* ---------- Tổng quan: giới thiệu + điều hướng (không hiển thị số liệu) ---------- */
 function renderHome(){
-  const box = $("#featured"); if (!box || typeof TEMPLATES === "undefined") return;
-  const n = (v, w) => `<b>${v}</b> ${w}`;
-  $("#inventory").innerHTML = `Đang có ${n(FONTS.length, "font")}, ${n(MASCOTS.length, "dáng mascot")}, ${n(PDFS.length, "guideline")}, ${n(TEMPLATES.length, "template")} và ${n(PROJECTS.length, "task")} đã lưu.`;
-  const masc = [...MASCOTS.filter(m => m.cloud), ...MASCOTS.filter(m => !m.cloud && (m.png || m.img))].slice(0, 9);
-  const guides = PDFS.slice(0, 4);
-  const tpls = TEMPLATES.slice(0, 4);
-  box.innerHTML = `
-    <article class="bx bx-logo">
-      <div class="bx-head"><div><h3>Logo</h3><p>${LOGO_TYPES.length} dạng logo, 6 size chuẩn, nền sáng và tối</p></div>
-        <button class="link-btn" data-go-sub="logo">Xem bộ logo<span>${I("chevronRight")}</span></button></div>
-      <div class="logo-stage">
-        <div class="ls l">${LOGO_SVG.mark_dark}</div>
-        <div class="ls d">${LOGO_SVG.mark_light}</div>
-      </div>
-      <div class="bx-foot">
-        <button class="btn btn-primary btn-sm" data-home-logo="svg">${I("download")}Tải logo chính SVG</button>
-        <button class="btn btn-ghost btn-sm" data-home-logo="png2">${I("download")}PNG @2x</button>
-      </div>
-    </article>
-
-    <article class="bx bx-mascot">
-      <div class="bx-head"><div><h3>Mascot</h3><p>${MASCOTS.length} dáng, đủ PNG, AI và bản 3D</p></div>
-        <button class="link-btn" data-go-sub="mascot">Xem tất cả<span>${I("chevronRight")}</span></button></div>
-      <div class="m-wall">${masc.map(m => `<button class="mw" data-home-mascot="${m.k}" title="${esc(m.name)}"><img src="${m.img || MASCOT_IMG[m.k]}" alt="${esc(m.name)}" loading="lazy"><span>${esc(m.name)}</span></button>`).join("")}</div>
-    </article>
-
-    <article class="bx bx-guide">
-      <div class="bx-head"><div><h3>Guideline</h3><p>Quy chuẩn cho ấn phẩm truyền thông, có lịch sử phiên bản</p></div>
-        <button class="link-btn" data-go="guide">Tất cả guideline<span>${I("chevronRight")}</span></button></div>
-      <ul class="g-list">${guides.map(g => { const v = cur(g); return `<li><button data-ginfo="${g.id}">
-        <span class="g-cov">${coverImg(g)}</span>
-        <span class="g-tx"><b>${esc(g.title)}</b><small>${esc(g.cat)} · ${esc(v.v)} · cập nhật ${fmtDate(v.date)}</small></span>
-        <span class="g-go">${I("chevronRight")}</span></button></li>`; }).join("") || `<li class="g-empty">Chưa có guideline nào.</li>`}</ul>
-    </article>
-
-    <article class="bx bx-tpl">
-      <div class="bx-head"><div><h3>Template</h3><p>File mẫu dùng chung, mở thẳng trên Figma, Drive hoặc Canva</p></div>
-        ${tpls.length ? `<button class="link-btn" data-go="templates">Tất cả template<span>${I("chevronRight")}</span></button>` : ""}</div>
-      ${tpls.length ? `<div class="t-row">${tpls.map(t => `<button class="t-mini" data-tinfo="${t.id}"><span class="t-cov">${tplCover(t)}</span><b>${esc(t.title)}</b><small>${toolTag(t)}${t.size ? " · " + esc(t.size) : ""}</small></button>`).join("")}</div>`
-        : `<div class="t-empty"><div><b>Chưa có template nào</b><p>Thêm khung social, banner hay slide mà team hay dùng để mọi người lấy đúng bản.</p></div><button class="btn btn-primary btn-sm" data-open="tpl-new">${I("add")}Thêm template đầu tiên</button></div>`}
-    </article>`;
+  const lg = $("#nv-logo"); if (!lg) return;
+  if (!lg.dataset.done){ lg.innerHTML = `<span class="ls l">${LOGO_SVG.mark_dark}</span><span class="ls d">${LOGO_SVG.mark_light}</span>`; lg.dataset.done = 1; }
+  const pick = ["xinchao", "thanhcong", "superman", "lixi"].map(k => MASCOTS.find(m => m.k === k)).filter(Boolean);
+  const masc = pick.length >= 4 ? pick : MASCOTS.filter(m => m.img || MASCOT_IMG[m.k]).slice(0, 4);
+  $("#nv-mascot").innerHTML = masc.map(m => `<span class="mw"><img src="${m.img || MASCOT_IMG[m.k]}" alt="" loading="lazy"></span>`).join("");
+  const covers = PDFS.filter(g => gCover(g)).slice(0, 2);
+  $("#nv-guide").innerHTML = covers.length ? covers.map(g => `<span class="gs">${coverImg(g)}</span>`).join("") : `<span class="gs">${I("bookOpen")}</span>`;
 }
 document.addEventListener("click", e => {
-  const l = e.target.closest("[data-home-logo]"); if (l){ downloadLogo(LOGO_TYPES[0], "l", 56, l.dataset.homeLogo); if (l.dataset.homeLogo === "svg") toast("Đang tải logo FPT Shop SVG"); }
-  const m = e.target.closest("[data-home-mascot]"); if (m){ const x = MASCOTS.find(z => z.k === m.dataset.homeMascot); if (x) showMascot(x); }
+  const s = e.target.closest("[data-scroll]"); if (s){ const t = $(s.dataset.scroll); if (t) t.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"}); }
 });
 
 
