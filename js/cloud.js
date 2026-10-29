@@ -62,16 +62,17 @@
   const soft = async q => { const r = await q; if (r.error && /does not exist|schema cache|42P01|PGRST20|column/i.test((r.error.message || "") + (r.error.code || ""))){ Cloud.needsMigration = true; return { data: [] }; } return r; };
   Cloud.load = async () => {
     Cloud.needsMigration = false;
-    const [m, f, g, p, t, ms, h] = await Promise.all([
+    const [m, f, g, p, t, ms, h, fo] = await Promise.all([
       sb.from("members").select("id,name,color").order("name"),
-      sb.from("fonts").select("id,name,category,role,use_case,vn_support,license,created_by,font_files(id,weight,style,file_name,path,size_bytes,sha1)").order("created_at", { ascending: false }),
+      sb.from("fonts").select("*,font_files(id,weight,style,file_name,path,size_bytes,sha1)").order("created_at", { ascending: false }),
       sb.from("guidelines").select("*, guideline_versions(*)").order("updated_at", { ascending: false }),
       sb.from("projects").select("*").order("done_at", { ascending: false }).limit(3000),
       soft(sb.from("templates").select("*").order("updated_at", { ascending: false })),
       soft(sb.from("mascots").select("*").order("created_at", { ascending: true })),
       soft(sb.from("hidden_items").select("kind,key")),
+      soft(sb.from("font_overrides").select("key,category,brand,use_case")),
     ]);
-    for (const r of [m, f, g, p, t, ms, h]) if (r.error) fail(r.error, "Không tải được dữ liệu");
+    for (const r of [m, f, g, p, t, ms, h, fo]) if (r.error) fail(r.error, "Không tải được dữ liệu");
     if (p.data[0] && !("pinned" in p.data[0])) Cloud.needsMigration = true;
     Cloud.members = m.data; Cloud.fontsCache = f.data; Cloud.guidesCache = g.data;
     const memberName = id => m.data.find(x => x.id === id)?.name || "Thành viên";
@@ -84,6 +85,7 @@
       mascots: ms.data.map(r => ({ ...r, by: memberName(r.created_by), img: pub("mascots", r.thumb_path), img3: pub("mascots", r.thumb3d_path),
         pngUrl: dl("mascots", r.png_path), aiUrl: dl("mascots", r.ai_path), url3: dl("mascots", r.render3d_path) })),
       hidden: h.data,
+      fontOverrides: fo.data,
     };
   };
 
@@ -96,7 +98,9 @@
       try {
         let font = Cloud.fontsCache.find(x => x.name.trim().toLowerCase() === g.name.trim().toLowerCase());
         if (!font){
-          const r = await sb.from("fonts").insert({ name: g.name.trim(), category: g.cat, use_case: g.use, vn_support: g.vn, role: "Tải lên bởi " + (Cloud.member?.name || "team") }).select().single();
+          const row = { name: g.name.trim(), category: g.cat, brand: g.brand, use_case: g.use, vn_support: g.vn, role: "Tải lên bởi " + (Cloud.member?.name || "team") };
+          let r = await sb.from("fonts").insert(row).select().single();
+          if (r.error && /brand/.test(r.error.message || "")){ delete row.brand; r = await sb.from("fonts").insert(row).select().single(); }
           if (r.error) fail(r.error, g.name);
           font = r.data; Cloud.fontsCache.unshift(font); out.added++;
         } else out.extended++;
@@ -153,6 +157,17 @@
     }
     const r = await sb.from("guidelines").update({ title: info.title, category: info.cat, description: info.desc || null, updated_at: new Date().toISOString() }).eq("id", g.cloudId);
     if (r.error) fail(r.error, info.title);
+  };
+
+  /* ---------- Sửa thông tin font ---------- */
+  Cloud.updateFont = async (id, d) => {
+    const r = await sb.from("fonts").update({ name: d.name, category: d.cat, brand: d.brand, use_case: d.use || null }).eq("id", id).select("id");
+    if (r.error) fail(/brand/.test(r.error.message || "") ? "Quản trị viên cần chạy migration-004 trong Supabase." : r.error, d.name);
+    if (!r.data?.length) fail("Không có quyền sửa font này. Quản trị viên cần chạy migration-004.");
+  };
+  Cloud.fontOverride = async (key, d) => {
+    const r = await sb.from("font_overrides").upsert({ key, category: d.cat, brand: d.brand, use_case: d.use || null, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (r.error) fail(/font_overrides|schema cache/.test(r.error.message || "") ? "Quản trị viên cần chạy migration-004 trong Supabase." : r.error, d.name);
   };
 
   /* ---------- Xoá / ẩn ---------- */

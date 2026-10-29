@@ -148,7 +148,7 @@ const FONTS = [
   L("dinhtran","UTM Đình Trần","Thư pháp","Thư pháp Việt",[400],"Tết, câu đối, chủ đề truyền thống."),
   L("mono","Matahari Mono","Mono","Monospace · Thông số",[400],"Bảng thông số, mã code, số liệu.","check",["mataharimono-400"]),
 ];
-const FONT_CATS = ["Tất cả","Design System","Sans","Grotesk","Rounded","Serif","Condensed","Display","Tech","Retro","Script","Brush","Viết tay","Vui nhộn","Thư pháp","Mono","Team tải lên"];
+const FONT_CATS = ["Tất cả","Design System","Sans","Grotesk","Rounded","Serif","Condensed","Display","Tech","Retro","Script","Brush","Viết tay","Vui nhộn","Thư pháp","Mono"];
 // register embedded font files
 (function(){
   const css = Object.entries(FONT_FILES).map(([k,f]) => `@font-face{font-family:'${f.fam}';src:url(${f.uri}) format('woff2');font-weight:${f.w};font-style:normal;font-display:swap}`).join("\n");
@@ -201,19 +201,33 @@ async function copy(text, label){
 }
 
 /* ---------- Navigation ---------- */
+let curTab = "home", curSub = "logo";
+const BRAND_HEAD = {logo: ["Logo", "Bộ logo FPT Shop theo Design System. Chọn size, nền và định dạng rồi tải về."], mascot: ["Mascot", "Toàn bộ dáng mascot với PNG, file AI và bản 3D. Team thêm được dáng mới."], color: ["Màu sắc", "Bảng màu thương hiệu và màu giao diện. Bấm vào ô màu để copy mã."]};
+function syncNav(){
+  let active = null;
+  $$(".side .tab").forEach(t => { const on = t.dataset.tab === curTab && (!t.dataset.subnav || t.dataset.subnav === curSub); if (on) active = t; on ? t.setAttribute("aria-current", "page") : t.removeAttribute("aria-current"); });
+  const ind = $(".side-ind");
+  if (ind && active){ ind.style.transform = `translateY(${active.offsetTop}px)`; ind.style.height = active.offsetHeight + "px"; ind.style.opacity = 1; if (active.scrollIntoView && window.innerWidth <= 900) active.scrollIntoView({inline: "center", block: "nearest", behavior: "smooth"}); }
+}
 function go(tab){
-  $$(".tab").forEach(t => t.setAttribute("aria-selected", t.dataset.tab === tab));
+  const changed = tab !== curTab; curTab = tab;
   $$(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + tab));
-  window.scrollTo({top:0, behavior:"smooth"});
+  syncNav();
+  if (changed) window.scrollTo({top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
 }
 function setSub(sub){
+  curSub = sub;
   $$("[data-sub]").forEach(x => x.setAttribute("aria-pressed", x.dataset.sub === sub));
   $$(".subpanel").forEach(x => x.hidden = x.id !== "sub-" + sub);
+  if (BRAND_HEAD[sub] && $("#brand-title")){ $("#brand-title").textContent = BRAND_HEAD[sub][0]; $("#brand-sub").textContent = BRAND_HEAD[sub][1]; }
+  syncNav();
 }
+window.addEventListener("resize", () => syncNav());
 document.addEventListener("click", e => {
   const g = e.target.closest("[data-go]"); if (g){ e.preventDefault(); go(g.dataset.go); }
   const gs = e.target.closest("[data-go-sub]"); if (gs){ go("brand"); setSub(gs.dataset.goSub); }
-  const t = e.target.closest(".tab"); if (t) go(t.dataset.tab);
+  const t = e.target.closest(".tab"); if (t){ if (t.dataset.subnav) setSub(t.dataset.subnav); go(t.dataset.tab); }
+  if (e.target.closest("[data-focus-search]")){ $("#q").focus(); }
   const s = e.target.closest("[data-sub]"); if (s) setSub(s.dataset.sub);
   if (e.target.closest("[data-open=contribute]")) openProjectForm();
   if (e.target.closest("[data-open=font-upload]")) openFontModal();
@@ -228,17 +242,29 @@ document.addEventListener("click", e => {
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeAll(); });
 
 /* ---------- Fonts ---------- */
-let fCat = "Tất cả";
+let fCat = "Tất cả", fBrand = "Tất cả";
 const licTag = f => f.lic === "free" ? '<span class="tag green">Miễn phí · OFL</span>' : '<span class="tag amber">Cần kiểm tra license</span>';
-function fontVisible(f){ return fCat === "Tất cả" || (fCat === "Design System" ? f.src === "ds" : f.cat === fCat); }
-const catOf = c => FONTS.filter(f => c === "Tất cả" || (c === "Design System" ? f.src === "ds" : c === "Team tải lên" ? (f.src === "upload" || f.src === "cloud") : f.cat === c));
+/* Brand: tự nhận từ tên font, sửa được */
+const GENERAL = "Dùng chung";
+const BRANDS = ["FPT Shop","Apple","Samsung","Xiaomi","OPPO","vivo","HONOR","realme","Google","Microsoft","Lenovo","ASUS","Garmin",GENERAL];
+const BRAND_RULES = [[/\bfpt/,"FPT Shop"],[/\bsf ?(pro|compact|mono|arabic|ui)\b|\bnew ?york\b|\bapple\b/,"Apple"],[/samsung|\bsharp ?sans\b|\bone ?ui\b/,"Samsung"],[/\bmi ?sans\b|xiaomi|\bhyper ?os\b|\bmi ?lan/,"Xiaomi"],[/oppo/,"OPPO"],[/\bvivo/,"vivo"],[/\bhonor/,"HONOR"],[/\brealme/,"realme"],[/\bgoogle ?sans\b|\bproduct ?sans\b|\broboto\b/,"Google"],[/\bsegoe\b|\bselawik\b/,"Microsoft"],[/lenovo/,"Lenovo"],[/\basus\b|\brog\b/,"ASUS"],[/garmin/,"Garmin"]];
+const detectBrand = name => { const n = String(name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); return (BRAND_RULES.find(([re]) => re.test(n)) || [0, GENERAL])[1]; };
+const fontBrand = f => f.brand || (f.src === "ds" ? "FPT Shop" : detectBrand(f.name));
+const inCat = (f, c) => c === "Tất cả" || (c === "Design System" ? f.src === "ds" : f.cat === c);
+const inBrand = (f, b) => b === "Tất cả" || fontBrand(f) === b;
+const catOf = c => FONTS.filter(f => inCat(f, c) && inBrand(f, fBrand));
 function renderFonts(){
-  $("#font-chips").innerHTML = FONT_CATS.map(c => { const n = catOf(c).length; return n || c === fCat ? `<button class="chip" data-fcat="${c}" aria-pressed="${c===fCat}">${c} <span class="n">${n}</span></button>` : ""; }).join("");
+  const cats = FONT_CATS.filter(c => c === fCat || FONTS.some(f => inCat(f, c)));
+  $("#font-chips").innerHTML = cats.map(c => `<button class="chip" data-fcat="${c}" aria-pressed="${c===fCat}">${c} <span class="n">${catOf(c).length}</span></button>`).join("");
+  const used = [...new Set(FONTS.map(fontBrand))].sort((a, b) => (a === "FPT Shop" ? -1 : b === "FPT Shop" ? 1 : a === GENERAL ? 1 : b === GENERAL ? -1 : a.localeCompare(b)));
+  if (fBrand !== "Tất cả" && !used.includes(fBrand)) fBrand = "Tất cả";
+  $("#font-brands").innerHTML = ["Tất cả", ...used].map(b => `<button class="chip" data-fbrand="${esc(b)}" aria-pressed="${b===fBrand}">${esc(b)} <span class="n">${FONTS.filter(f => inCat(f, fCat) && inBrand(f, b)).length}</span></button>`).join("");
   const list = catOf(fCat);
   $("#font-count").textContent = list.length + " font";
   $("#font-grid").innerHTML = list.map(f => {
     const wTop = f.weights.map(w => w[0]).includes(700) ? 700 : Math.max(...f.weights.map(w => w[0]));
-    const badge = f.src === "ds" ? '<span class="tag red">Design System</span>' : (f.src === "upload" || f.src === "cloud") ? '<span class="tag green">Team tải lên</span>' : '';
+    const br = fontBrand(f);
+    const badge = f.src === "ds" ? '<span class="tag red">Design System</span>' : br !== GENERAL ? `<span class="tag blue">${esc(br)}</span>` : '';
     return `<article class="card fcard" data-font-open="${f.k}" tabindex="0" role="button" aria-label="Xem font ${esc(f.name)}">
       <div class="fthumb" style="font-family:'${f.fam}'">
         <span class="badge">${badge}</span>
@@ -251,8 +277,10 @@ function renderFonts(){
       <div class="fmeta"><div><h3>${esc(f.name)}</h3><div class="sub">${esc(f.role)} · ${f.weights.length} weight</div></div><div class="tags"><span class="tag">${esc(f.cat)}</span></div></div>
     </article>`;
   }).join("");
+  if (!list.length) $("#font-grid").innerHTML = `<div class="card empty" style="display:block;grid-column:1/-1"><b>Chưa có font ${esc(fCat === "Tất cả" ? "" : fCat)} cho ${esc(fBrand)}</b><div>Thử chọn kiểu chữ hoặc brand khác.</div></div>`;
   updateSamples();
 }
+document.addEventListener("click", e => { const b = e.target.closest("[data-fbrand]"); if (b){ fBrand = b.dataset.fbrand; renderFonts(); } });
 function fontFiles(f){
   if (f.src === "upload" || f.src === "cloud") return f.files;
   return (f.files || []).map(key => {
@@ -294,7 +322,7 @@ function openFont(k){
   $("#drawer-body").innerHTML = `
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
       <div><h3 class="title" style="font-family:'${f.fam}';margin-bottom:6px">${f.name}</h3>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${f.src==="ds"?'<span class="tag red">Design System</span>':'<span class="tag blue">Font marketing</span>'}<span class="tag">${f.cat}</span>${licTag(f)}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${f.src==="ds"?'<span class="tag red">Design System</span>':''}<span class="tag blue">${esc(fontBrand(f))}</span><span class="tag">${esc(f.cat)}</span>${licTag(f)}</div></div>
     </div>
     <p style="margin:0 0 16px;color:var(--gray-600);font-size:13px">${f.use}</p>
     <div class="fd-preview" id="fd-prev" contenteditable="true" spellcheck="false" style="font-family:'${f.fam}';font-weight:${w0}">${esc(txt)}</div>
@@ -308,6 +336,7 @@ function openFont(k){
       ${f.src==="ds" ? `<a class="btn btn-primary" href="${f.url}" target="_blank" rel="noopener">${I("download")}Tải từ Google Fonts</a>` : fontFiles(f).map((x,i) => `<button class="btn ${i?'btn-outline':'btn-primary'}" data-font-dl="${f.k}" data-idx="${i}">${I("download")}Tải ${esc(x.label)}</button>`).join("")}
       <button class="btn btn-ghost" id="copy-css">${I("copy")}Copy CSS</button>
       ${f.src==="ds" ? `<a class="btn btn-ghost" href="${DS}4844-5096" target="_blank" rel="noopener">${I("external")}Xem trên Figma</a>` : ''}
+      <button class="btn btn-ghost" data-fedit="${f.k}">${I("edit")}Sửa thông tin</button>
       <button class="btn btn-ghost del" data-del="font:${f.k}">${I("delete")}Xoá font</button>
     </div>`;
   $$("#drawer-body [data-fw]").forEach(b => b.addEventListener("click", () => {
@@ -400,7 +429,7 @@ function findDup(p){
   return null;
 }
 let pending = [];
-const UP_CATS = FONT_CATS.filter(c => !["Tất cả","Design System","Team tải lên"].includes(c));
+const UP_CATS = FONT_CATS.filter(c => !["Tất cả","Design System"].includes(c));
 function fdropDefault(){ $("#fdrop-inner").innerHTML = I("upload").replace('class="i"','class="i" style="font-size:28px;margin:0 auto 6px;color:var(--primary-500)"') + '<b>Kéo thả nhiều file font vào đây</b><div style="font-size:12px;margin-top:4px">TTF, OTF, WOFF, WOFF2 · chọn cả thư mục font cũng được</div>'; }
 function openFontModal(){
   if (!requireAuth("tải font lên")) return;
@@ -424,6 +453,7 @@ async function addPending(files){
     const m = measureFont(fam);
     const cls = classifyFont(meta, name + " " + base, m);
     const p = {id, fam, buf, hash, file, name, style: meta.style || WN[weight], weight, cat: cls.cat, why: cls.why, vn: m.vn, href: URL.createObjectURL(file), fileName: file.name, size: file.size};
+    p.brand = detectBrand(name + " " + base);
     p.dup = findDup(p); p.include = !p.dup || p.dup.startsWith("bổ sung");
     pending.push(p);
   }
@@ -438,7 +468,8 @@ function renderPending(){
       <div class="pv" style="font-family:'${p.fam}'">Aa</div>
       <div class="nm">
         <input type="text" value="${esc(p.name)}" data-pi="${i}" data-pf="name" aria-label="Tên font">
-        <div class="row2"><select data-pi="${i}" data-pf="cat" aria-label="Nhóm font" style="flex:1">${UP_CATS.map(c => `<option ${c===p.cat?'selected':''}>${c}</option>`).join("")}</select>
+        <div class="row2"><select data-pi="${i}" data-pf="cat" aria-label="Kiểu chữ" style="flex:1">${UP_CATS.map(c => `<option ${c===p.cat?'selected':''}>${c}</option>`).join("")}</select>
+          <input type="text" list="brand-list" value="${esc(p.brand)}" data-pi="${i}" data-pf="brand" aria-label="Brand" placeholder="Brand" style="flex:1;min-width:0">
           ${p.vn ? '<span class="tag green">Đủ dấu tiếng Việt</span>' : '<span class="tag amber">Thiếu dấu tiếng Việt</span>'}</div>
         <small>${esc(p.fileName)} · ${esc(p.style)} · ${(p.size/1024).toFixed(0)} KB · tự nhận: ${esc(p.cat)} (${esc(p.why)})${p.dup ? ` · <b style="color:var(--warning-800)">${esc(p.dup)}</b>` : ''}</small>
       </div>
@@ -460,10 +491,10 @@ $("#fform").addEventListener("submit", async e => {
   sel.forEach(p => { const key = norm(p.name); (groups[key] = groups[key] || []).push(p); });
   if (Cloud.on){
     const btn = $("#fsubmit"); btn.classList.add("busy"); btn.lastChild.textContent = "Đang tải lên…";
-    const gs = Object.values(groups).map(ps => { const main = ps.find(p => p.weight === 400) || ps[0]; return { name: main.name, cat: main.cat, vn: main.vn, use: custom || USE_BY_CAT[main.cat] || "", files: ps.map(p => ({ file: p.file, weight: p.weight, style: p.style, hash: p.hash })) }; });
+    const gs = Object.values(groups).map(ps => { const main = ps.find(p => p.weight === 400) || ps[0]; return { name: main.name, cat: main.cat, brand: (main.brand || "").trim() || GENERAL, vn: main.vn, use: custom || USE_BY_CAT[main.cat] || "", files: ps.map(p => ({ file: p.file, weight: p.weight, style: p.style, hash: p.hash })) }; });
     try {
       const r = await Cloud.saveFonts(gs);
-      await loadCloud(); fCat = "Team tải lên"; renderFonts(); closeAll(); go("fonts");
+      await loadCloud(); fCat = "Tất cả"; fBrand = "Tất cả"; renderFonts(); closeAll(); go("fonts"); flashFonts(gs.map(g => g.name));
       toast(`Đã lưu ${r.added} font mới` + (r.extended ? `, bổ sung ${r.extended} font` : "") + (r.skipped ? ` · ${r.skipped} file đã có` : "") + (r.errors.length ? ` · lỗi: ${r.errors[0]}` : ""));
     } catch(err){ toast("Không lưu được: " + err.message); }
     finally { btn.classList.remove("busy"); btn.lastChild.textContent = "Thêm vào thư viện"; pending = []; }
@@ -481,12 +512,12 @@ $("#fform").addEventListener("submit", async e => {
     const gfam = "UG_" + main.id;
     ps.forEach(p => { const ff = new FontFace(gfam, p.buf, {weight: ps.length === 1 ? "1 1000" : String(p.weight)}); ff.load().then(f => document.fonts.add(f)); KNOWN_HASH.add(p.hash); });
     const clash = FONTS.some(x => norm(x.name) === norm(main.name));
-    FONTS.unshift({ k: main.id, name: main.name.trim() + (clash ? " (bổ sung)" : ""), fam: gfam, cat: main.cat, src: "upload", role: "Tải lên bởi Bạn" + (main.vn ? "" : " · thiếu dấu TV"), weights: ps.map(p => [p.weight, p.style]), use: custom || USE_BY_CAT[main.cat] || "Font do team tải lên.", lic: "check",
+    FONTS.unshift({ k: main.id, name: main.name.trim() + (clash ? " (bổ sung)" : ""), fam: gfam, cat: main.cat, brand: (main.brand || "").trim() || GENERAL, src: "upload", role: "Tải lên bởi Bạn" + (main.vn ? "" : " · thiếu dấu TV"), weights: ps.map(p => [p.weight, p.style]), use: custom || USE_BY_CAT[main.cat] || "Font do team tải lên.", lic: "check",
       files: ps.map(p => ({ label: p.style, href: p.href, name: p.fileName })) });
     added++;
   });
   const skipped = pending.length - sel.length; pending = [];
-  fCat = "Team tải lên"; renderFonts(); counts(); closeAll(); go("fonts");
+  fCat = "Tất cả"; fBrand = "Tất cả"; renderFonts(); counts(); closeAll(); go("fonts"); flashFonts(sel.map(p => p.name));
   toast(`Đã thêm ${added} font mới` + (extended ? `, bổ sung weight cho ${extended} font` : "") + (skipped ? ` · bỏ qua ${skipped} file đã có` : ""));
 });
 
@@ -895,7 +926,7 @@ function renderProjects(){
   $("#proj-more").hidden = rest <= 0; $("#proj-more").textContent = `Xem thêm ${Math.min(rest, 50)} task (còn ${rest})`;
   $("#proj-empty").style.display = list.length || (!filtering && pins.length) ? "none" : "block";
   const recent = [...PROJECTS].sort((a,b) => String(b.date).localeCompare(String(a.date))).slice(0,5);
-  $("#recent").innerHTML = recent.map(projRow).join("");
+  if ($("#recent")) $("#recent").innerHTML = recent.map(projRow).join("");
 }
 $("#proj-more").addEventListener("click", () => { projLimit += 50; renderProjects(); });
 const allTypes = () => [...new Set([...PROJECTS.map(p => p.type).filter(Boolean), ...TYPES])];
@@ -1054,11 +1085,12 @@ $("#form").addEventListener("submit", async e => {
 });
 
 function counts(){
-  $("#cnt-fonts").textContent = $("#st-fonts").textContent = FONTS.length;
-  $("#cnt-brand").textContent = $("#st-brand").textContent = LOGO_TYPES.length + MASCOTS.length;
-  $("#st-guide").textContent = PDFS.length;
-  $("#cnt-proj").textContent = $("#st-proj").textContent = PROJECTS.length;
+  $("#cnt-fonts").textContent = FONTS.length;
+  $("#cnt-brand").textContent = MASCOTS.length;
+  $("#cnt-guide").textContent = PDFS.length;
+  $("#cnt-proj").textContent = PROJECTS.length;
   $("#cnt-tpl").textContent = TEMPLATES.length;
+  renderHome();
 }
 
 /* ---------- Xác nhận xoá ---------- */
@@ -1470,6 +1502,46 @@ function openCsvImport(){
   }
 }
 
+/* ---------- Font: brand + sửa thông tin ---------- */
+const fillBrandList = () => { const all = [...new Set([...BRANDS, ...FONTS.map(fontBrand)])]; $("#brand-list").innerHTML = all.map(b => `<option value="${esc(b)}">`).join(""); };
+fillBrandList();
+function flashFonts(names){
+  const keys = new Set(names.map(n => norm(n)));
+  setTimeout(() => {
+    const cards = $$("#font-grid .fcard").filter(c => keys.has(norm(c.querySelector("h3")?.textContent)));
+    if (cards[0]) cards[0].scrollIntoView({block: "center", behavior: "smooth"});
+    cards.forEach(c => { c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); });
+  }, 300);
+}
+const FONT_OVR = {};
+function openFontForm(k){
+  if (!requireAuth("sửa thông tin font")) return;
+  const f = FONTS.find(x => x.k === k); if (!f) return;
+  fillBrandList();
+  const team = f.src === "cloud" || f.src === "upload";
+  openX("Sửa thông tin font", `
+    <div class="field" id="ff-name-f"><label for="ff-name">Tên font</label><input class="xin" id="ff-name" type="text" value="${esc(f.name)}" ${team ? "" : "disabled"}><div class="msg">Nhập tên font</div>${team ? "" : '<div class="hint">Font có sẵn trong hub giữ nguyên tên.</div>'}</div>
+    <div class="two">
+      <div class="field"><label for="ff-cat">Kiểu chữ</label><select id="ff-cat" style="width:100%">${UP_CATS.map(c => `<option ${c === f.cat ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+      <div class="field"><label for="ff-brand">Brand</label><input class="xin" id="ff-brand" type="text" list="brand-list" value="${esc(fontBrand(f))}" placeholder="VD: Xiaomi, OPPO, ${GENERAL}"></div>
+    </div>
+    <div class="field"><label for="ff-use">Dùng cho</label><input class="xin" id="ff-use" type="text" value="${esc(f.use || "")}" placeholder="VD: Banner ra mắt điện thoại Xiaomi"></div>`,
+    "Lưu thông tin", {
+    async submit(){
+      const name = $("#ff-name").value.trim();
+      if (team && !name) return fieldErr("ff-name-f");
+      const data = {name: team ? name : f.name, cat: $("#ff-cat").value, brand: $("#ff-brand").value.trim() || GENERAL, use: $("#ff-use").value.trim()};
+      if (Cloud.on){
+        if (f.cloudId) await Cloud.updateFont(f.cloudId, data); else await Cloud.fontOverride(f.k, data);
+        await loadCloud();
+      } else Object.assign(f, data);
+      closeAll(); fCat = "Tất cả"; fBrand = "Tất cả"; renderFonts(); go("fonts"); flashFonts([data.name]);
+      toast(`Đã lưu thông tin “${data.name}”`);
+    }
+  });
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-fedit]"); if (b){ const k = b.dataset.fedit; closeAll(); setTimeout(() => openFontForm(k), 60); } });
+
 
 /* ---------- Tìm kiếm toàn hub ---------- */
 const fold = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
@@ -1506,9 +1578,9 @@ function searchAll(q){
     t: (p.code ? p.code + " · " : "") + cleanTitle(p.title), sub: [p.type, p.people.map(pName).join(", "), fmtDate(p.date)].filter(Boolean).join(" · "),
     go: () => { go("projects"); openProject(p.id); } })), true);
   add("font", "Font", FONTS.map(f => ({
-    s: score(words, f.name, f.cat + " " + f.role + " " + (f.use || "")),
+    s: score(words, f.name, f.cat + " " + fontBrand(f) + " " + f.role + " " + (f.use || "")),
     ic: `<span style="font-family:'${f.fam}';font-size:17px;color:var(--primary-500)">Aa</span>`,
-    t: f.name, sub: `${f.cat} · ${f.role}`, go: () => { go("fonts"); openFont(f.k); } })));
+    t: f.name, sub: `${f.cat} · ${fontBrand(f)} · ${f.role}`, go: () => { go("fonts"); openFont(f.k); } })));
   add("tpl", "Template", TEMPLATES.map(t => ({
     s: score(words, t.title, t.cat + " " + (t.size || "") + " " + (t.tags || []).join(" ") + " " + (t.desc || "")),
     ic: I("board"), t: t.title, sub: [t.cat, TOOLS[toolOf(t.link)][0], t.size].filter(Boolean).join(" · "),
@@ -1586,6 +1658,56 @@ $("#sr").addEventListener("click", e => {
 $("#q").addEventListener("blur", () => setTimeout(() => { $("#sr").hidden = true; $("#q").setAttribute("aria-expanded", "false"); }, 120));
 document.addEventListener("keydown", e => {
   if (e.key === "/" && !/input|textarea|select/i.test(document.activeElement?.tagName || "") && !document.activeElement?.isContentEditable){ e.preventDefault(); $("#q").focus(); $("#q").select(); }
+});
+
+
+/* ---------- Tổng quan: giới thiệu + mục nổi bật ---------- */
+function renderHome(){
+  const box = $("#featured"); if (!box || typeof TEMPLATES === "undefined") return;
+  const n = (v, w) => `<b>${v}</b> ${w}`;
+  $("#inventory").innerHTML = `Đang có ${n(FONTS.length, "font")}, ${n(MASCOTS.length, "dáng mascot")}, ${n(PDFS.length, "guideline")}, ${n(TEMPLATES.length, "template")} và ${n(PROJECTS.length, "task")} đã lưu.`;
+  const masc = [...MASCOTS.filter(m => m.cloud), ...MASCOTS.filter(m => !m.cloud && (m.png || m.img))].slice(0, 9);
+  const guides = PDFS.slice(0, 4);
+  const tpls = TEMPLATES.slice(0, 4);
+  box.innerHTML = `
+    <article class="bx bx-logo">
+      <div class="bx-head"><div><h3>Logo</h3><p>${LOGO_TYPES.length} dạng logo, 6 size chuẩn, nền sáng và tối</p></div>
+        <button class="link-btn" data-go-sub="logo">Xem bộ logo<span>${I("chevronRight")}</span></button></div>
+      <div class="logo-stage">
+        <div class="ls l">${LOGO_SVG.mark_dark}</div>
+        <div class="ls d">${LOGO_SVG.mark_light}</div>
+      </div>
+      <div class="bx-foot">
+        <button class="btn btn-primary btn-sm" data-home-logo="svg">${I("download")}Tải logo chính SVG</button>
+        <button class="btn btn-ghost btn-sm" data-home-logo="png2">${I("download")}PNG @2x</button>
+      </div>
+    </article>
+
+    <article class="bx bx-mascot">
+      <div class="bx-head"><div><h3>Mascot</h3><p>${MASCOTS.length} dáng, đủ PNG, AI và bản 3D</p></div>
+        <button class="link-btn" data-go-sub="mascot">Xem tất cả<span>${I("chevronRight")}</span></button></div>
+      <div class="m-wall">${masc.map(m => `<button class="mw" data-home-mascot="${m.k}" title="${esc(m.name)}"><img src="${m.img || MASCOT_IMG[m.k]}" alt="${esc(m.name)}" loading="lazy"><span>${esc(m.name)}</span></button>`).join("")}</div>
+    </article>
+
+    <article class="bx bx-guide">
+      <div class="bx-head"><div><h3>Guideline</h3><p>Quy chuẩn cho ấn phẩm truyền thông, có lịch sử phiên bản</p></div>
+        <button class="link-btn" data-go="guide">Tất cả guideline<span>${I("chevronRight")}</span></button></div>
+      <ul class="g-list">${guides.map(g => { const v = cur(g); return `<li><button data-ginfo="${g.id}">
+        <span class="g-cov">${coverImg(g)}</span>
+        <span class="g-tx"><b>${esc(g.title)}</b><small>${esc(g.cat)} · ${esc(v.v)} · cập nhật ${fmtDate(v.date)}</small></span>
+        <span class="g-go">${I("chevronRight")}</span></button></li>`; }).join("") || `<li class="g-empty">Chưa có guideline nào.</li>`}</ul>
+    </article>
+
+    <article class="bx bx-tpl">
+      <div class="bx-head"><div><h3>Template</h3><p>File mẫu dùng chung, mở thẳng trên Figma, Drive hoặc Canva</p></div>
+        ${tpls.length ? `<button class="link-btn" data-go="templates">Tất cả template<span>${I("chevronRight")}</span></button>` : ""}</div>
+      ${tpls.length ? `<div class="t-row">${tpls.map(t => `<button class="t-mini" data-tinfo="${t.id}"><span class="t-cov">${tplCover(t)}</span><b>${esc(t.title)}</b><small>${toolTag(t)}${t.size ? " · " + esc(t.size) : ""}</small></button>`).join("")}</div>`
+        : `<div class="t-empty"><div><b>Chưa có template nào</b><p>Thêm khung social, banner hay slide mà team hay dùng để mọi người lấy đúng bản.</p></div><button class="btn btn-primary btn-sm" data-open="tpl-new">${I("add")}Thêm template đầu tiên</button></div>`}
+    </article>`;
+}
+document.addEventListener("click", e => {
+  const l = e.target.closest("[data-home-logo]"); if (l){ downloadLogo(LOGO_TYPES[0], "l", 56, l.dataset.homeLogo); if (l.dataset.homeLogo === "svg") toast("Đang tải logo FPT Shop SVG"); }
+  const m = e.target.closest("[data-home-mascot]"); if (m){ const x = MASCOTS.find(z => z.k === m.dataset.homeMascot); if (x) showMascot(x); }
 });
 
 
@@ -1686,10 +1808,13 @@ async function loadCloud(){
     const fam = "C_" + f.id.replace(/-/g, "");
     const single = f.files.length === 1;
     f.files.forEach(x => { KNOWN_HASH.add(x.sha1); const ff = new FontFace(fam, `url(${x.url})`, {weight: single ? "1 1000" : String(x.weight)}); document.fonts.add(ff); ff.load().catch(() => {}); });
-    return { k: "c" + f.id, cloudId: f.id, paths: f.files.map(x => x.path), name: f.name, fam, cat: f.category, src: "cloud", role: (f.role || "Tải lên bởi " + f.by) + (f.vn_support === false ? " · thiếu dấu TV" : ""), weights: f.files.map(x => [x.weight, x.style || WN[x.weight] || "Regular"]), use: f.use_case || USE_BY_CAT[f.category] || "", lic: f.license || "check",
+    return { k: "c" + f.id, cloudId: f.id, paths: f.files.map(x => x.path), name: f.name, fam, cat: f.category, brand: f.brand || null, src: "cloud", role: (f.role || "Tải lên bởi " + f.by) + (f.vn_support === false ? " · thiếu dấu TV" : ""), weights: f.files.map(x => [x.weight, x.style || WN[x.weight] || "Regular"]), use: f.use_case || USE_BY_CAT[f.category] || "", lic: f.license || "check",
       files: f.files.map(x => ({label: x.style || WN[x.weight] || "Regular", href: x.url, name: x.file_name})) };
   });
   FONTS.unshift(...cloudFonts);
+  // thông tin sửa cho font có sẵn
+  (d.fontOverrides || []).forEach(o => { const f = FONTS.find(x => x.k === o.key); if (!f) return; if (o.category) f.cat = o.category; if (o.brand) f.brand = o.brand; if (o.use_case) f.use = o.use_case; });
+  fillBrandList();
   // Guideline: bản trên cloud thay bản có sẵn cùng tên
   const cloudPdfs = d.guidelines.map(g => {
     const base = BUILTIN_PDFS.find(p => p.title.toLowerCase() === g.title.toLowerCase());
