@@ -61,7 +61,7 @@
     const [m, f, g, p] = await Promise.all([
       sb.from("members").select("id,name,color").order("name"),
       sb.from("fonts").select("id,name,category,role,use_case,vn_support,license,created_by,font_files(id,weight,style,file_name,path,size_bytes,sha1)").order("created_at", { ascending: false }),
-      sb.from("guidelines").select("*").order("updated_at", { ascending: false }),
+      sb.from("guidelines").select("*, guideline_versions(*)").order("updated_at", { ascending: false }),
       sb.from("projects").select("*").order("done_at", { ascending: false }).limit(500),
     ]);
     for (const r of [m, f, g, p]) if (r.error) fail(r.error, "Không tải được dữ liệu");
@@ -70,7 +70,7 @@
     return {
       members: m.data,
       fonts: f.data.map(r => ({ ...r, by: memberName(r.created_by), files: (r.font_files || []).sort((a,b) => a.weight - b.weight).map(x => ({ ...x, url: pub("fonts", x.path) })) })),
-      guidelines: g.data.map(r => ({ ...r, by: memberName(r.created_by), url: pub("guidelines", r.path), cover: pub("guidelines", r.cover_path) })),
+      guidelines: g.data.map(r => ({ ...r, by: memberName(r.created_by), url: pub("guidelines", r.path), cover: pub("guidelines", r.cover_path), versions: (r.guideline_versions || []).sort((a,b) => b.created_at.localeCompare(a.created_at)).map(v => ({ ...v, by: memberName(v.created_by) })) })),
       projects: p.data.map(r => ({ ...r, thumb: pub("thumbs", r.thumb_path) })),
     };
   };
@@ -101,26 +101,46 @@
     return out;
   };
 
-  /* ---------- Guideline PDF ---------- */
-  // items: [{ file, title, cat, pages, cover (Blob|null) }]
-  Cloud.saveGuidelines = async (items) => {
-    const out = { added: 0, replaced: 0, errors: [] };
-    for (const it of items){
-      try {
-        const id = uid();
-        const up = await sb.storage.from("guidelines").upload(`${id}.pdf`, it.file, { contentType: "application/pdf" });
-        if (up.error) fail(up.error, it.file.name);
-        let cover_path = null;
-        if (it.cover){ const c = await sb.storage.from("guidelines").upload(`covers/${id}.webp`, it.cover, { contentType: "image/webp" }); if (!c.error) cover_path = `covers/${id}.webp`; }
-        const row = { title: it.title.trim(), category: it.cat, pages: it.pages || null, size_bytes: it.file.size, file_name: it.file.name, path: `${id}.pdf`, cover_path, updated_at: new Date().toISOString() };
-        const existing = Cloud.guidesCache.find(x => x.title.trim().toLowerCase() === row.title.toLowerCase());
-        const r = existing ? await sb.from("guidelines").update(row).eq("id", existing.id).select().single()
-                           : await sb.from("guidelines").insert(row).select().single();
-        if (r.error) fail(r.error, it.title);
-        if (existing){ Object.assign(existing, r.data); out.replaced++; } else { Cloud.guidesCache.unshift(r.data); out.added++; }
-      } catch(e){ out.errors.push(e.message); }
+  /* ---------- Guideline: link Google Drive + phiên bản ---------- */
+  // g: tài liệu hiện có (có thể là bản dựng sẵn chưa nằm trong DB) hoặc null; info: {title, cat, desc}; ver: {v, note, drive:{id, kind}}
+  Cloud.addGuideVersion = async (g, info, ver) => {
+    let gid = g?.cloudId;
+    if (!gid){
+      const row = { title: (info?.title || g.title).trim(), category: info?.cat || g.cat, description: (info?.desc ?? g?.desc) || null, updated_at: new Date().toISOString() };
+      const ex = Cloud.guidesCache.find(x => x.title.trim().toLowerCase() === row.title.toLowerCase());
+      if (ex) gid = ex.id;
+      else {
+        const r = await sb.from("guidelines").insert(row).select().single();
+        if (r.error) fail(r.error, row.title);
+        gid = r.data.id; Cloud.guidesCache.unshift(r.data);
+        // tài liệu dựng sẵn trên Drive: giữ lại các bản cũ trong lịch sử
+        const old = (g?.versions || []).filter(v => v.drive).slice().reverse();
+        for (const v of old){
+          const o = await sb.from("guideline_versions").insert({ guideline_id: gid, version: v.v, drive_id: v.drive.id, kind: v.drive.kind, note: v.note || null, created_at: new Date(v.date).toISOString() });
+          if (o.error) fail(o.error, "Lịch sử cũ");
+        }
+      }
     }
-    return out;
+    const r = await sb.from("guideline_versions").insert({ guideline_id: gid, version: ver.v, drive_id: ver.drive.id, kind: ver.drive.kind, note: ver.note || null });
+    if (r.error) fail(r.error, "Phiên bản mới");
+    const patch = { updated_at: new Date().toISOString() };
+    if (info){ patch.category = info.cat; if (info.desc) patch.description = info.desc; }
+    const u = await sb.from("guidelines").update(patch).eq("id", gid);
+    if (u.error) fail(u.error, "Cập nhật tài liệu");
+  };
+  Cloud.updateGuideline = async (g, info) => {
+    if (!g.cloudId){
+      // tài liệu dựng sẵn: tạo bản ghi rồi chép lịch sử Drive hiện có
+      const r = await sb.from("guidelines").insert({ title: info.title, category: info.cat, description: info.desc || null }).select().single();
+      if (r.error) fail(r.error, info.title);
+      for (const v of (g.versions || []).filter(v => v.drive).slice().reverse()){
+        const o = await sb.from("guideline_versions").insert({ guideline_id: r.data.id, version: v.v, drive_id: v.drive.id, kind: v.drive.kind, note: v.note || null, created_at: new Date(v.date).toISOString() });
+        if (o.error) fail(o.error, "Lịch sử cũ");
+      }
+      return;
+    }
+    const r = await sb.from("guidelines").update({ title: info.title, category: info.cat, description: info.desc || null, updated_at: new Date().toISOString() }).eq("id", g.cloudId);
+    if (r.error) fail(r.error, info.title);
   };
 
   /* ---------- Task ---------- */

@@ -160,8 +160,8 @@
 <!-- GUIDELINE -->
 <section class="view" id="view-guide">
   <div class="page-head">
-    <div><h1>Guideline</h1><p>Quy chuẩn cho ấn phẩm truyền thông, tách riêng với Design System. Mỗi guideline là một file PDF: xem ngay trên hub hoặc tải về. Cập nhật bằng cách tải bản PDF mới lên.</p></div>
-    <button class="btn btn-primary" data-open="pdf-upload"><span data-i="upload"></span>Tải PDF lên</button>
+    <div><h1>Guideline</h1><p>Quy chuẩn cho ấn phẩm truyền thông, tách riêng với Design System. File gốc nằm trên Google Drive; hub lưu thông tin, xem nhanh và lịch sử các phiên bản.</p></div>
+    <button class="btn btn-primary" data-open="pdf-upload"><span data-i="add"></span>Thêm tài liệu</button>
   </div>
   <div class="chips subnav" id="guide-chips" role="group" aria-label="Lọc guideline"></div>
   <div class="grid pdf-grid" id="pdf-grid"></div>
@@ -244,6 +244,7 @@
     <button class="icon-btn" id="v-zo" aria-label="Thu nhỏ"><span style="font-weight:700;font-size:18px;line-height:1">−</span></button>
     <span class="zoom" id="v-zoom">100%</span>
     <button class="icon-btn" id="v-zi" aria-label="Phóng to" data-i="add"></button>
+    <a class="btn btn-ghost btn-sm" id="v-open" href="#" target="_blank" rel="noopener" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.35)"><span data-i="external"></span>Mở trên Drive</a>
     <a class="btn btn-white btn-sm" id="v-dl" href="#" download><span data-i="download"></span>Tải về</a>
     <button class="icon-btn" id="v-close" aria-label="Đóng" data-i="dismiss"></button>
   </div>
@@ -251,12 +252,10 @@
 </div>
 <div class="modal" id="pmodal" aria-hidden="true">
   <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="pmodal-title">
-    <div class="drawer-head"><h2 id="pmodal-title">Tải guideline PDF lên</h2><button class="icon-btn" data-close aria-label="Đóng" data-i="dismiss"></button></div>
-    <form id="pform" novalidate>
-      <div class="field"><div class="drop" id="pdrop"><input type="file" id="p-files" accept="application/pdf,.pdf" multiple aria-label="Chọn file PDF"><div id="pdrop-inner"></div></div>
-      <div class="hint">Hub tự tạo thumbnail từ trang đầu và đếm số trang. Tải bản mới cùng tên sẽ thay bản cũ.</div></div>
-      <div class="up-list" id="p-list"></div>
-      <div class="form-actions" style="margin-top:14px"><button type="button" class="btn btn-ghost" data-close>Huỷ</button><button type="submit" class="btn btn-primary" id="psubmit" disabled><span data-i="checkmark"></span>Thêm guideline</button></div>
+    <div class="drawer-head"><h2 id="pmodal-title">Thêm tài liệu</h2><button class="icon-btn" data-close aria-label="Đóng" data-i="dismiss"></button></div>
+    <form id="pform" novalidate style="padding:20px 24px 24px">
+      <div id="pform-body"></div>
+      <div class="form-actions" style="margin-top:4px"><button type="button" class="btn btn-ghost" data-close>Huỷ</button><button type="submit" class="btn btn-primary" id="psubmit"><span data-i="checkmark"></span>Lưu</button></div>
     </form>
   </div>
 </div>
