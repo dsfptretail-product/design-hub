@@ -215,7 +215,7 @@ document.addEventListener("click", e => {
   const gs = e.target.closest("[data-go-sub]"); if (gs){ go("brand"); setSub(gs.dataset.goSub); }
   const t = e.target.closest(".tab"); if (t) go(t.dataset.tab);
   const s = e.target.closest("[data-sub]"); if (s) setSub(s.dataset.sub);
-  if (e.target.closest("[data-open=contribute]")) openModal();
+  if (e.target.closest("[data-open=contribute]")) openProjectForm();
   if (e.target.closest("[data-open=font-upload]")) openFontModal();
   if (e.target.closest("[data-close]") || e.target === $("#scrim")) closeAll();
   const sw = e.target.closest(".sw"); if (sw) copy(sw.dataset.hex, sw.dataset.name + " " + sw.dataset.hex);
@@ -585,7 +585,7 @@ function renderMascots(){
     const v = has2d ? (mView[m.k] || "2d") : "3d";
     const img = v === "3d" ? (m.img3 || MASCOT_IMG[m.k3]) : (m.img || MASCOT_IMG[m.k]);
     const dl = (u, id, name) => u ? `href="${u}" download="${esc(name)}"` : `href="${driveDl(id)}" target="_blank" rel="noopener"`;
-    return `<div class="card mc">
+    return `<div class="card mc" data-mk="${m.k}">
       <div class="stage">
         <div class="seg" role="group" aria-label="Kiểu mascot"><button type="button" data-mv="${m.k}" data-v="2d" aria-pressed="${v==='2d'}" ${has2d?'':'disabled'}>2D</button><button type="button" data-mv="${m.k}" data-v="3d" aria-pressed="${v==='3d'}" ${has3d(m)?'':'disabled'}>3D</button></div>
         ${m.cloud ? '<span class="tag green">Mới thêm</span>' : has3d(m) ? '' : '<span class="tag">Chưa có 3D</span>'}
@@ -846,8 +846,8 @@ document.addEventListener("click", e => {
   if (e.target.closest("[data-open=pdf-upload]")) openPdfModal();
 });
 
-/* ---------- Projects ---------- */
-let fType = "", fPerson = "", query = "", projLimit = 48;
+/* ---------- Projects: danh sách gọn, không thumbnail ---------- */
+let fType = "", fPerson = "", query = "", projLimit = 50;
 const PALETTE = ["#CB1C22","#034EA2","#2F855A","#F37021","#444B52","#901418","#1250DC","#7A4CC2","#0E7C86"];
 const colorOf = s => PALETTE[[...String(s)].reduce((a,c) => (a*31 + c.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
 // người làm: id thành viên hoặc tên (task nhập từ CSV)
@@ -855,25 +855,25 @@ person = id => PEOPLE.find(p => p.id === id) || PEOPLE.find(p => p.name === id) 
 const pName = id => person(id)?.name || "";
 const projById = id => PROJECTS.find(p => p.id === id);
 PROJECTS.forEach((p,i) => { p.id = p.id || "d" + i; p.pinned = p.pinned ?? i === 0; });
-function cover(p){
-  if (p.thumb) return '<img class="up" src="'+p.thumb+'" alt="" loading="lazy">';
-  const a = ART[(p.art || 0) % ART.length];
-  return '<div class="art'+(a.light?' light':'')+'" style="background:'+a.bg+'"><span class="blob" style="width:200px;height:200px;right:-50px;top:-70px;background:#fff"></span><div class="headline"><small>'+esc(p.type)+'</small>'+esc(p.sub || p.title)+'</div><img src="'+MASCOT_IMG[a.m]+'" alt="" loading="lazy"></div>';
-}
-const avatars = ids => '<div class="avatars">' + ids.slice(0,4).map(id => { const p = person(id); return p ? `<span class="av" style="background:${p.color}" title="${esc(p.name)}">${initials(p.name)}</span>` : ''; }).join("") + '</div>';
+// bỏ mã task lặp ở đầu tên: "PROD-8830 | [Social] …" → "[Social] …"
+const cleanTitle = t => String(t || "").replace(/^\s*[A-Z][A-Z0-9]+-\d+\s*[|:–-]?\s*/, "").trim() || t;
 const isDone = s => !s || /done|xong|hoàn thành|closed|resolved/i.test(s);
-const projCard = p => `<article class="card proj" data-proj="${p.id}" tabindex="0" role="button" aria-label="${esc(p.title)}">
-  <div class="cover">${cover(p)}</div>
-  ${p.pinned ? `<span class="pinned-flag">${I("pin")}Nổi bật</span>` : ""}
-  <div class="pacts">
+const linkKind = u => /figma\.com/.test(u) ? ["Figma","#212529","designIdeas"] : /docs\.google\.com\/presentation/.test(u) ? ["Google Slides","#F4B400","document"] : /drive\.google\.com\/drive\/(mobile\/)?(u\/\d+\/)?folders/.test(u) ? ["Thư mục Drive","#1A73E8","folder"] : /google\.com/.test(u) ? ["Google Drive","#1A73E8","document"] : /canva\.com/.test(u) ? ["Canva","#00C4CC","paintBrush"] : ["Link","#444B52","link"];
+const avatars = ids => '<div class="avatars">' + ids.slice(0,3).map(id => { const p = person(id); return p ? `<span class="av" style="background:${p.color}" title="${esc(p.name)}">${initials(p.name)}</span>` : ''; }).join("") + '</div>';
+const peopleCell = ids => { const ps = ids.map(person).filter(Boolean); if (!ps.length) return '<span class="muted">Chưa có</span>'; return avatars(ids) + `<span class="pn">${esc(ps[0].name)}${ps.length > 1 ? ` +${ps.length - 1}` : ""}</span>`; };
+const projRow = p => { const lk = p.link ? linkKind(p.link) : null; return `<div class="prow${p.pinned ? ' pinned' : ''}" data-proj="${p.id}" tabindex="0" role="button" aria-label="${esc(cleanTitle(p.title))}">
+  <div class="pc-code">${p.code ? `<span class="code">${esc(p.code)}</span>` : '<span class="code none">Chưa có mã</span>'}</div>
+  <div class="pc-main"><b>${p.pinned ? `<span class="pin-dot" title="Nổi bật">${I("pin")}</span>` : ""}${esc(cleanTitle(p.title))}</b>
+    <div class="pc-tags"><span class="tag">${esc(p.type || "Khác")}</span>${p.tags.slice(0,2).map(t => `<span class="tag">${esc(t)}</span>`).join("")}${!isDone(p.status) ? `<span class="tag amber">${esc(p.status)}</span>` : ""}</div></div>
+  <div class="pc-people">${peopleCell(p.people)}</div>
+  <div class="pc-date">${fmtDate(p.date)}</div>
+  <div class="pc-acts">
+    ${lk ? `<a class="icon-btn" href="${esc(p.link)}" target="_blank" rel="noopener" title="Mở ${lk[0]}" aria-label="Mở ${lk[0]}">${I("external")}</a>` : `<span class="icon-btn ghost" title="Chưa có link thiết kế">${I("link")}</span>`}
     <button class="icon-btn ${p.pinned ? 'on' : ''}" data-pin="${p.id}" title="${p.pinned ? 'Bỏ ghim' : 'Ghim lên đầu'}" aria-label="${p.pinned ? 'Bỏ ghim' : 'Ghim lên đầu'}">${I(p.pinned ? "pinOff" : "pin")}</button>
+    <button class="icon-btn" data-pedit="${p.id}" title="Sửa thông tin" aria-label="Sửa thông tin">${I("edit")}</button>
     <button class="icon-btn del" data-del="project:${p.id}" title="Xoá task" aria-label="Xoá task">${I("delete")}</button>
-  </div>
-  <div class="info">
-    <div class="tagrow"><span class="tag">${esc(p.type)}</span>${p.code ? `<span class="code">${esc(p.code)}</span>` : ""}${!isDone(p.status) ? `<span class="tag amber">${esc(p.status)}</span>` : ""}</div>
-    <h3>${esc(p.title)}</h3>
-    <div class="row">${avatars(p.people)}<span class="date">${fmtDate(p.date)}</span></div>
-  </div></article>`;
+  </div></div>`; };
+const listHead = `<div class="prow head"><div class="pc-code">Mã task</div><div class="pc-main">Tên task</div><div class="pc-people">Người làm</div><div class="pc-date">Ngày</div><div class="pc-acts"></div></div>`;
 function matches(p){
   if (fType && p.type !== fType) return false;
   if (fPerson && !p.people.some(id => pName(id) === fPerson)) return false;
@@ -887,56 +887,103 @@ function renderProjects(){
   const filtering = !!(fType || fPerson || query);
   const pins = PROJECTS.filter(p => p.pinned);
   $("#pin-wrap").hidden = filtering || !pins.length;
-  $("#pin-grid").innerHTML = $("#pin-wrap").hidden ? "" : pins.map(projCard).join("");
+  $("#pin-grid").innerHTML = $("#pin-wrap").hidden ? "" : pins.map(projRow).join("");
   const list = PROJECTS.filter(p => (filtering || !p.pinned) && matches(p));
   $("#proj-total").textContent = list.length + " task";
-  $("#proj-grid").innerHTML = list.slice(0, projLimit).map(projCard).join("");
+  $("#proj-grid").innerHTML = list.length ? listHead + list.slice(0, projLimit).map(projRow).join("") : "";
   const rest = list.length - projLimit;
-  $("#proj-more").hidden = rest <= 0; $("#proj-more").textContent = `Xem thêm ${Math.min(rest, 48)} task (còn ${rest})`;
+  $("#proj-more").hidden = rest <= 0; $("#proj-more").textContent = `Xem thêm ${Math.min(rest, 50)} task (còn ${rest})`;
   $("#proj-empty").style.display = list.length || (!filtering && pins.length) ? "none" : "block";
-  const recent = [...PROJECTS].sort((a,b) => (b.pinned - a.pinned) || String(b.date).localeCompare(String(a.date))).slice(0,4);
-  $("#recent").innerHTML = recent.map(projCard).join("");
+  const recent = [...PROJECTS].sort((a,b) => String(b.date).localeCompare(String(a.date))).slice(0,5);
+  $("#recent").innerHTML = recent.map(projRow).join("");
 }
-$("#proj-more").addEventListener("click", () => { projLimit += 48; renderProjects(); });
+$("#proj-more").addEventListener("click", () => { projLimit += 50; renderProjects(); });
 const allTypes = () => [...new Set([...PROJECTS.map(p => p.type).filter(Boolean), ...TYPES])];
 function renderFilters(){
   const types = [...new Set(PROJECTS.map(p => p.type).filter(Boolean))];
   $("#type-chips").innerHTML = ["", ...types].map(t => `<button class="chip" data-type="${esc(t)}" aria-pressed="${t===fType}">${t ? esc(t) : "Tất cả"} <span class="n">${t ? PROJECTS.filter(p => p.type === t).length : PROJECTS.length}</span></button>`).join("");
   const names = [...new Set(PROJECTS.flatMap(p => p.people.map(pName)).filter(Boolean))].sort((a,b) => a.localeCompare(b, "vi"));
   $("#person-filter").innerHTML = '<option value="">Tất cả người làm</option>' + names.map(n => `<option ${n===fPerson?'selected':''}>${esc(n)}</option>`).join("");
-  $("#f-person").innerHTML = '<option value="">Chọn…</option>' + PEOPLE.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
-  $("#f-type").innerHTML = '<option value="">Chọn…</option>' + allTypes().map(t => `<option>${esc(t)}</option>`).join("");
 }
-$("#person-filter").addEventListener("change", e => { fPerson = e.target.value; projLimit = 48; renderProjects(); });
-$("#q").addEventListener("input", e => { query = e.target.value.trim().toLowerCase(); projLimit = 48; if (query && !$("#view-projects").classList.contains("active")) go("projects"); renderProjects(); });
-document.addEventListener("keydown", e => { const c = e.target.closest?.(".proj"); if (c && e.target === c && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); openProject(c.dataset.proj); } });
+$("#person-filter").addEventListener("change", e => { fPerson = e.target.value; projLimit = 50; renderProjects(); });
+$("#q").addEventListener("input", e => { query = e.target.value.trim().toLowerCase(); projLimit = 50; renderProjects(); });
+document.addEventListener("keydown", e => { const c = e.target.closest?.(".prow[data-proj]"); if (c && e.target === c && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); openProject(c.dataset.proj); } });
 
-const linkKind = u => /figma\.com/.test(u) ? ["Figma","#212529","designIdeas"] : /docs\.google\.com\/presentation/.test(u) ? ["Google Slides","#F4B400","document"] : /drive\.google\.com\/drive\/(mobile\/)?(u\/\d+\/)?folders/.test(u) ? ["Thư mục Google Drive","#1A73E8","folder"] : /google\.com/.test(u) ? ["Google Drive","#1A73E8","document"] : /canva\.com/.test(u) ? ["Canva","#00C4CC","paintBrush"] : ["Link","#444B52","link"];
 function openProject(id){
   const p = projById(id); if (!p) return;
   const lk = p.link ? linkKind(p.link) : null;
   $("#drawer-title").textContent = "Chi tiết task";
   $("#drawer-body").innerHTML = `
-    <div class="cover">${cover(p)}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="tag red">${esc(p.type)}</span>${p.code ? `<span class="code">${esc(p.code)}</span>` : ""}${p.pinned ? '<span class="tag">Nổi bật</span>' : ""}</div>
-    <h3 class="title" style="margin-top:10px">${esc(p.title)}</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${p.code ? `<span class="code" style="font-size:13px">${esc(p.code)}</span>` : ""}<span class="tag red">${esc(p.type || "Khác")}</span>${p.pinned ? `<span class="tag">${I("pin")} Nổi bật</span>` : ""}</div>
+    <h3 class="title" style="margin-top:10px">${esc(cleanTitle(p.title))}</h3>
     <dl class="kv">
-      ${p.code ? `<dt>Mã task</dt><dd><span class="code">${esc(p.code)}</span><button class="btn btn-ghost btn-sm" data-pcopy="${esc(p.code)}" style="height:26px;padding:0 8px">${I("copy")}Copy</button></dd>` : ""}
-      <dt>Người làm</dt><dd>${p.people.map(person).filter(Boolean).map(x => `<span style="display:inline-flex;align-items:center;gap:6px"><span class="av" style="background:${x.color};margin:0">${initials(x.name)}</span>${esc(x.name)}</span>`).join("") || "–"}</dd>
-      <dt>Hạng mục</dt><dd><span class="tag">${esc(p.type)}</span>${p.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</dd>
+      <dt>Mã task</dt><dd>${p.code ? `<span class="code">${esc(p.code)}</span><button class="btn btn-ghost btn-sm" data-pcopy="${esc(p.code)}" style="height:26px;padding:0 8px">${I("copy")}Copy</button>` : '<span class="muted">Chưa có</span>'}</dd>
+      <dt>Người làm</dt><dd>${p.people.map(person).filter(Boolean).map(x => `<span style="display:inline-flex;align-items:center;gap:6px"><span class="av" style="background:${x.color};margin:0">${initials(x.name)}</span>${esc(x.name)}</span>`).join("") || '<span class="muted">Chưa có</span>'}</dd>
+      <dt>Hạng mục</dt><dd><span class="tag">${esc(p.type || "Khác")}</span>${p.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</dd>
       ${p.status ? `<dt>Trạng thái</dt><dd><span class="tag ${isDone(p.status) ? 'green' : 'amber'}">${esc(p.status)}</span></dd>` : ""}
       <dt>${isDone(p.status) ? "Ngày hoàn thành" : "Cập nhật"}</dt><dd>${fmtDate(p.date) || "–"}</dd>
       <dt>Nguồn</dt><dd>${p.source === "jira" ? "Nhập từ CSV Jira" : "Thêm thủ công"}</dd>
     </dl>
     <h4 class="lbl" style="margin-top:0">File thiết kế</h4>
     ${p.link ? `<div class="file-row"><div class="fi" style="background:${lk[1]}">${I(lk[2])}</div><div class="nm"><b>${lk[0]}</b><span>${esc(p.link)}</span></div><a class="btn btn-dark btn-sm" href="${esc(p.link)}" target="_blank" rel="noopener">${I("external")}Mở file</a></div>`
-      : `<div class="file-row"><div class="fi" style="background:var(--gray-400)">${I("link")}</div><div class="nm"><b>Chưa có link thiết kế</b><span>Cột “Actual Business Value” trên Jira đang trống</span></div></div>`}
+      : `<div class="file-row"><div class="fi" style="background:var(--gray-400)">${I("link")}</div><div class="nm"><b>Chưa có link thiết kế</b><span>Bấm “Sửa thông tin” để thêm link Figma hoặc Drive</span></div></div>`}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
-      <button class="btn ${p.pinned ? 'btn-ghost' : 'btn-primary'} btn-sm" data-pin="${p.id}">${I(p.pinned ? "pinOff" : "pin")}${p.pinned ? "Bỏ ghim" : "Ghim lên đầu"}</button>
+      <button class="btn btn-primary btn-sm" data-pedit="${p.id}">${I("edit")}Sửa thông tin</button>
+      <button class="btn btn-ghost btn-sm" data-pin="${p.id}">${I(p.pinned ? "pinOff" : "pin")}${p.pinned ? "Bỏ ghim" : "Ghim lên đầu"}</button>
       ${p.link ? `<button class="btn btn-ghost btn-sm" data-pcopy="${esc(p.link)}">${I("copy")}Copy link</button>` : ""}
       <button class="btn btn-ghost btn-sm del" data-del="project:${p.id}">${I("delete")}Xoá task</button>
     </div>`;
   openDrawer();
+}
+
+/* Thêm thủ công / sửa thông tin task */
+function openProjectForm(id){
+  if (!requireAuth(id ? "sửa task" : "thêm task")) return;
+  const p = id ? projById(id) : null;
+  const names = [...new Set([...PEOPLE.map(x => x.name), ...PROJECTS.flatMap(x => x.people.map(pName))].filter(Boolean))].sort((a,b) => a.localeCompare(b, "vi"));
+  const me = Cloud.member?.name || "";
+  openX(p ? "Sửa thông tin task" : "Thêm task", `
+    <div class="two" style="grid-template-columns:160px 1fr">
+      <div class="field"><label for="pf-code">Mã task</label><input class="xin" id="pf-code" type="text" value="${p ? esc(p.code || "") : ""}" placeholder="PROD-1234" style="font-family:ui-monospace,Menlo,monospace"></div>
+      <div class="field" id="pf-title-f"><label for="pf-title">Tên task <span class="req">*</span></label><input class="xin" id="pf-title" type="text" value="${p ? esc(cleanTitle(p.title)) : ""}" placeholder="VD: [Banner Social] Laptop văn phòng T11"><div class="msg">Nhập tên task</div></div>
+    </div>
+    <div class="two">
+      <div class="field" id="pf-type-f"><label for="pf-type">Hạng mục <span class="req">*</span></label><input class="xin" id="pf-type" list="pf-types" value="${p ? esc(p.type || "") : ""}" placeholder="Chọn hoặc gõ mới"><datalist id="pf-types">${allTypes().map(t => `<option value="${esc(t)}">`).join("")}</datalist><div class="msg">Chọn hạng mục</div></div>
+      <div class="field"><label for="pf-status">Trạng thái</label><input class="xin" id="pf-status" list="pf-sts" value="${p ? esc(p.status || "") : "Done"}"><datalist id="pf-sts"><option value="Done"><option value="In Review"><option value="In-Progress"><option value="1. Open"></datalist></div>
+    </div>
+    <div class="field" id="pf-people-f"><label for="pf-people">Người làm <span class="req">*</span></label><input class="xin" id="pf-people" list="pf-names" value="${p ? esc(p.people.map(pName).join(", ")) : esc(me)}" placeholder="Tên người làm, nhiều người cách nhau bằng dấu phẩy"><datalist id="pf-names">${names.map(n => `<option value="${esc(n)}">`).join("")}</datalist><div class="msg">Nhập người làm</div></div>
+    <div class="field" id="pf-link-f"><label for="pf-link">Link thiết kế</label><input class="xin" id="pf-link" type="url" value="${p ? esc(p.link || "") : ""}" placeholder="https://www.figma.com/design/… hoặc link Drive"><div class="msg">Link cần bắt đầu bằng https://</div></div>
+    <div class="two">
+      <div class="field"><label for="pf-date">Ngày hoàn thành</label><input class="xin" id="pf-date" type="date" value="${p ? esc(String(p.date || "").slice(0,10)) : new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label for="pf-tags">Tag</label><input class="xin" id="pf-tags" type="text" value="${p ? esc(p.tags.join(", ")) : ""}" placeholder="landing, sale…"></div>
+    </div>
+    ${p?.source === "jira" ? '<p style="margin:-4px 0 8px;font-size:12px;color:var(--gray-500)">Task này nhập từ Jira. Nếu nhập lại CSV có cùng mã task, thông tin trên Jira sẽ ghi đè phần sửa ở đây.</p>' : ""}`,
+    p ? "Lưu thông tin" : "Thêm task", {
+    async submit(){
+      $$("#xform .field.err").forEach(f => f.classList.remove("err"));
+      const title = $("#pf-title").value.trim(), type = $("#pf-type").value.trim(), link = $("#pf-link").value.trim();
+      const people = $("#pf-people").value.split(",").map(s => s.trim()).filter(Boolean);
+      if (!title) return fieldErr("pf-title-f");
+      if (!type) return fieldErr("pf-type-f");
+      if (!people.length) return fieldErr("pf-people-f");
+      if (link && !/^https?:\/\/\S+/.test(link)) return fieldErr("pf-link-f");
+      const code = $("#pf-code").value.trim().toUpperCase();
+      if (code && PROJECTS.some(x => x.code === code && x !== p)) return fieldErr("pf-title-f", `Mã ${code} đã có trong hub`);
+      // giữ id thành viên nếu tên trùng thành viên
+      const ids = people.map(n => PEOPLE.find(m => m.name === n)?.id || (p?.people.find(x => pName(x) === n)) || n);
+      const data = {code: code || null, title, type, people: ids, link: link || null, status: $("#pf-status").value.trim(), date: $("#pf-date").value || new Date().toISOString().slice(0,10), tags: $("#pf-tags").value.split(",").map(s => s.trim()).filter(Boolean)};
+      if (Cloud.on){
+        if (p) await Cloud.updateProject(p.cloudId, data); else await Cloud.saveProject(data);
+        await loadCloud();
+      } else if (p) Object.assign(p, data);
+      else PROJECTS.unshift({id: "l" + Date.now().toString(36), source: "manual", pinned: false, ...data});
+      PROJECTS.sort((a,b) => String(b.date).localeCompare(String(a.date)));
+      closeAll(); go("projects"); renderFilters(); renderProjects(); counts();
+      toast(p ? "Đã lưu thông tin task" : "Đã thêm task");
+      const again = p ? (p.cloudId ? PROJECTS.find(x => x.cloudId === p.cloudId) : p) : null;
+      if (again) setTimeout(() => openProject(again.id), 250);
+    }
+  });
 }
 async function togglePin(id){
   const p = projById(id); if (!p) return;
@@ -951,6 +998,8 @@ async function togglePin(id){
 }
 document.addEventListener("click", e => {
   const pin = e.target.closest("[data-pin]"); if (pin){ e.stopPropagation(); togglePin(pin.dataset.pin); return; }
+  const ed = e.target.closest("[data-pedit]"); if (ed){ e.stopPropagation(); const id = ed.dataset.pedit; closeAll(); setTimeout(() => openProjectForm(id), 60); return; }
+  if (e.target.closest(".prow .pc-acts a")){ e.stopPropagation(); return; }
   const cp = e.target.closest("[data-pcopy]"); if (cp){ copy(cp.dataset.pcopy, cp.dataset.pcopy.startsWith("http") ? "link" : cp.dataset.pcopy); }
 }, true);
 
@@ -1341,7 +1390,7 @@ function mapCsv(rows){
   const nil = v => !v || /^(none|null|n\/a|unassigned|-)$/i.test(v) ? "" : v;
   const items = rows.slice(1).map(r => {
     const code = (get(r, "code").match(/[A-Z][A-Z0-9]+-\d+/) || [get(r, "code")])[0].trim();
-    const title = get(r, "title");
+    const title = cleanTitle(get(r, "title"));
     const labels = (idx.labels || []).flatMap(i => (r[i] || "").split(/[,;]/)).map(s => s.trim()).filter(s => nil(s));
     const type = labels[0] || inferType(title);
     const link = (nil(get(r, "link")).match(/https?:\/\/[^\s,;"]+/) || [""])[0];
@@ -1420,6 +1469,124 @@ function openCsvImport(){
     $("#c-done").addEventListener("change", upd); upd();
   }
 }
+
+
+/* ---------- Tìm kiếm toàn hub ---------- */
+const fold = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
+function hl(text, words){
+  const t = String(text || ""); if (!words.length) return esc(t);
+  const f = fold(t); const marks = new Array(t.length).fill(false);
+  words.forEach(w => { let i = f.indexOf(w); while (w && i >= 0){ for (let k = i; k < i + w.length; k++) marks[k] = true; i = f.indexOf(w, i + w.length); } });
+  let out = "", on = false;
+  [...t].forEach((c, i) => { if (marks[i] !== on){ out += marks[i] ? "<mark>" : "</mark>"; on = marks[i]; } out += esc(c); });
+  return out + (on ? "</mark>" : "");
+}
+// điểm: khớp đầu tên > khớp trong tên > khớp phần phụ
+function score(words, main, extra){
+  const m = fold(main), x = fold(extra);
+  let s = 0;
+  for (const w of words){
+    const wb = new RegExp("(^|[^a-z0-9])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    if (m.startsWith(w)) s += 6;
+    else if (wb.test(m)) s += 4;
+    else if (w.length > 2 && m.includes(w)) s += 3;
+    else if (w.length > 2 ? x.includes(w) : wb.test(x)) s += 1;
+    else return 0;
+  }
+  return s;
+}
+function searchAll(q){
+  const words = fold(q).split(/\s+/).filter(Boolean);
+  if (!words.length) return {words, groups: []};
+  const G = [];
+  const add = (key, label, items, all) => { items = items.filter(x => x.s > 0).sort((a, b) => b.s - a.s); if (items.length) G.push({key, label, items, all}); };
+  add("project", "Task", PROJECTS.map(p => ({
+    s: score(words, (p.code || "") + " " + cleanTitle(p.title), p.type + " " + p.tags.join(" ") + " " + p.people.map(pName).join(" ") + " " + (p.status || "")),
+    ic: `<span style="font:600 10px ui-monospace,Menlo,monospace;color:var(--gray-600)">${esc((p.code || "").replace(/^[A-Z]+-/, "#") || "Task")}</span>`,
+    t: (p.code ? p.code + " · " : "") + cleanTitle(p.title), sub: [p.type, p.people.map(pName).join(", "), fmtDate(p.date)].filter(Boolean).join(" · "),
+    go: () => { go("projects"); openProject(p.id); } })), true);
+  add("font", "Font", FONTS.map(f => ({
+    s: score(words, f.name, f.cat + " " + f.role + " " + (f.use || "")),
+    ic: `<span style="font-family:'${f.fam}';font-size:17px;color:var(--primary-500)">Aa</span>`,
+    t: f.name, sub: `${f.cat} · ${f.role}`, go: () => { go("fonts"); openFont(f.k); } })));
+  add("tpl", "Template", TEMPLATES.map(t => ({
+    s: score(words, t.title, t.cat + " " + (t.size || "") + " " + (t.tags || []).join(" ") + " " + (t.desc || "")),
+    ic: I("board"), t: t.title, sub: [t.cat, TOOLS[toolOf(t.link)][0], t.size].filter(Boolean).join(" · "),
+    go: () => { go("templates"); openTpl(t.id); } })));
+  add("guide", "Guideline", PDFS.map(g => ({
+    s: score(words, g.title, g.cat + " " + (g.desc || "")),
+    ic: I("bookOpen"), t: g.title, sub: `${g.cat} · ${cur(g).v}`, go: () => { go("guide"); openGuideInfo(g.id); } })));
+  add("mascot", "Mascot", MASCOTS.map(m => ({
+    s: score(words, m.name, m.group + " " + (m.use || "") + " mascot"),
+    ic: `<img src="${m.img || MASCOT_IMG[m.k] || m.img3 || MASCOT_IMG[m.k3]}" alt="">`, t: m.name, sub: `${m.group}${m.use ? " · " + m.use : ""}`,
+    go: () => showMascot(m) })));
+  add("logo", "Logo", LOGO_TYPES.map(l => ({
+    s: score(words, l.name, l.sub + " logo"), ic: I("star"), t: l.name, sub: l.sub, go: () => { go("brand"); setSub("logo"); openLogo(l.k); } })));
+  add("color", "Màu", COLORS.flatMap(g => g.items.map(([n, h]) => ({
+    s: score(words, n, h + " " + g.group + " " + g.note + " mau color"),
+    ic: `<span style="width:100%;height:100%;background:${h};display:block"></span>`, t: n, sub: `${h} · bấm để copy`,
+    go: () => { go("brand"); setSub("color"); copy(h, n + " " + h); } }))));
+  add("ds", "Design System", [...DS_FOUND, ...DS_COMP].map(x => ({
+    s: score(words, x.t, x.d + " design system ds figma component"), ic: I(x.i), t: x.t, sub: x.d + " · mở Figma", go: () => window.open(DS + x.node, "_blank", "noopener") })));
+  return {words, groups: G};
+}
+function showMascot(m){
+  go("brand"); setSub("mascot"); mGroup = "Tất cả"; $("#m3d-only").checked = false; renderMascots();
+  setTimeout(() => { const c = $(`#mascot-grid [data-mk="${m.k}"]`); if (c){ c.scrollIntoView({block: "center", behavior: "smooth"}); c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); } }, 350);
+}
+let srItems = [], srAct = -1;
+const SR_LIMIT = {project: 5};
+function renderSearch(){
+  const q = $("#q").value.trim(), box = $("#sr");
+  if (!q){ box.hidden = true; $("#q").setAttribute("aria-expanded", "false"); return; }
+  const {words, groups} = searchAll(q);
+  srItems = []; srAct = -1;
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  let html = "";
+  groups.forEach(g => {
+    const lim = SR_LIMIT[g.key] || 4;
+    html += `<h5>${g.label} <span>${g.items.length > lim && g.all ? `<button type="button" data-sr-all>Xem cả ${g.items.length} task</button>` : g.items.length}</span></h5>`;
+    g.items.slice(0, lim).forEach(it => { const i = srItems.push(it) - 1; html += `<div class="it" role="option" data-sr="${i}" id="sr-${i}"><div class="ic">${it.ic}</div><div class="tx"><b>${hl(it.t, words)}</b><small>${hl(it.sub, words)}</small></div></div>`; });
+  });
+  box.innerHTML = total ? html : `<div class="none"><img src="${MASCOT_IMG.timkiem}" alt=""><b>Không thấy “${esc(q)}”</b><div style="font-size:13px;margin-top:2px">Thử tên font, tên mascot, mã PROD hoặc tên người làm.</div></div>`;
+  box.hidden = false; $("#q").setAttribute("aria-expanded", "true"); placeSearch();
+}
+function placeSearch(){
+  const r = $("#q").getBoundingClientRect(), box = $("#sr");
+  const w = Math.min(Math.max(r.width, 520), window.innerWidth - 24);
+  box.style.top = (r.bottom + 8) + "px"; box.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + "px"; box.style.width = w + "px";
+  box.style.maxHeight = Math.min(560, window.innerHeight - r.bottom - 24) + "px";
+}
+window.addEventListener("resize", () => { if (!$("#sr").hidden) placeSearch(); });
+window.addEventListener("scroll", () => { if (!$("#sr").hidden) placeSearch(); }, {passive: true});
+function pickSearch(i){
+  const it = srItems[i]; if (!it) return;
+  $("#sr").hidden = true; $("#q").blur();
+  it.go();
+}
+function moveAct(d){
+  if (!srItems.length) return;
+  srAct = (srAct + d + srItems.length) % srItems.length;
+  $$("#sr .it").forEach(x => x.classList.toggle("act", +x.dataset.sr === srAct));
+  const el = $("#sr-" + srAct); el?.scrollIntoView({block: "nearest"}); $("#q").setAttribute("aria-activedescendant", "sr-" + srAct);
+}
+$("#q").addEventListener("input", renderSearch);
+$("#q").addEventListener("focus", () => { if ($("#q").value.trim()) renderSearch(); });
+$("#q").addEventListener("keydown", e => {
+  if (e.key === "ArrowDown"){ e.preventDefault(); moveAct(1); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); moveAct(-1); }
+  else if (e.key === "Enter"){ e.preventDefault(); if (srAct >= 0) pickSearch(srAct); else if (srItems.length) pickSearch(0); }
+  else if (e.key === "Escape"){ if (!$("#sr").hidden){ e.stopPropagation(); $("#sr").hidden = true; } else { $("#q").value = ""; $("#q").dispatchEvent(new Event("input")); } }
+});
+$("#sr").addEventListener("mousedown", e => e.preventDefault());
+$("#sr").addEventListener("click", e => {
+  const it = e.target.closest("[data-sr]"); if (it) return pickSearch(+it.dataset.sr);
+  if (e.target.closest("[data-sr-all]")){ $("#sr").hidden = true; fType = ""; fPerson = ""; renderFilters(); go("projects"); renderProjects(); $("#q").blur(); }
+});
+$("#q").addEventListener("blur", () => setTimeout(() => { $("#sr").hidden = true; $("#q").setAttribute("aria-expanded", "false"); }, 120));
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && !/input|textarea|select/i.test(document.activeElement?.tagName || "") && !document.activeElement?.isContentEditable){ e.preventDefault(); $("#q").focus(); $("#q").select(); }
+});
 
 
 /* ---------- Supabase: đăng nhập + đồng bộ ---------- */

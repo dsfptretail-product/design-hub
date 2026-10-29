@@ -217,11 +217,19 @@
   };
 
   /* ---------- Task ---------- */
-  Cloud.saveProject = async (p, thumbBlob) => {
-    let thumb_path = null;
-    if (thumbBlob){ const path = `${uid()}.webp`; const r = await sb.storage.from("thumbs").upload(path, thumbBlob, { contentType: "image/webp" }); if (r.error) fail(r.error, "Ảnh thumbnail"); thumb_path = path; }
-    const r = await sb.from("projects").insert({ title: p.title, type: p.type, people: p.people, tags: p.tags, link: p.link || null, thumb_path, done_at: p.date }).select().single();
-    if (r.error) fail(r.error, p.title);
-    return { ...r.data, thumb: pub("thumbs", thumb_path) };
+  const projRow = p => ({ title: p.title, type: p.type, people: p.people, tags: p.tags, link: p.link || null, done_at: p.date, code: p.code || null, status: p.status || null });
+  Cloud.saveProject = async (p) => {
+    const row = { ...projRow(p), source: "manual" };
+    if (p.code) row.external_id = p.code;
+    const r = await sb.from("projects").insert(row).select().single();
+    if (r.error) fail(r.error.code === "23505" ? `Mã ${p.code} đã có trong hub` : r.error, p.title);
+    return r.data;
+  };
+  Cloud.updateProject = async (id, p) => {
+    const row = projRow(p);
+    row.external_id = p.code || null;
+    const r = await sb.from("projects").update(row).eq("id", id).select("id");
+    if (r.error) fail(r.error.code === "23505" ? `Mã ${p.code} đã có trong hub` : r.error, p.title);
+    if (!r.data?.length) fail("Không có quyền sửa task này. Quản trị viên cần chạy migration-003.");
   };
 })();
