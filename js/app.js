@@ -877,7 +877,7 @@ const BUILTIN_PDFS = PDFS.slice();
 const DEMO_PEOPLE = PEOPLE.slice();
 function requireAuth(what){
   if (!Cloud.on || Cloud.user) return true;
-  openAuth(`Cần đăng nhập để ${what}. Nhập email công ty, hub sẽ gửi link đăng nhập vào hộp thư.`);
+  openAuth(`Cần đăng nhập để ${what}. Dùng email và mật khẩu quản trị viên đã cấp.`);
   return false;
 }
 function renderAuth(){
@@ -894,28 +894,48 @@ function openAuth(why){
   const logged = !!Cloud.user;
   $("#a-in").hidden = logged; $("#a-sent").hidden = true; $("#a-me").hidden = !logged;
   $("#amodal-title").textContent = logged ? "Tài khoản" : "Đăng nhập Design Hub";
-  if (why) $("#a-why").textContent = why;
+  $("#a-why").textContent = why || "Đăng nhập bằng email và mật khẩu quản trị viên đã cấp.";
   if (logged){ $("#a-name").value = Cloud.member?.name || ""; $("#a-email-show").textContent = Cloud.user.email; }
   $("#amodal").classList.add("open"); $("#amodal").setAttribute("aria-hidden","false"); $("#scrim").classList.add("open");
-  setTimeout(() => (logged ? $("#a-name") : $("#a-email")).focus(), 50);
+  $("#fd-pass").classList.remove("err"); setTimeout(() => (logged ? $("#a-name") : $("#a-email")).focus(), 50);
 }
 document.addEventListener("click", e => { if (e.target.closest("#auth-open")) openAuth(); });
+function authErr(m){
+  if (/invalid login credentials/i.test(m)) return "Sai email hoặc mật khẩu.";
+  if (/email not confirmed/i.test(m)) return "Tài khoản chưa được xác nhận. Nhờ quản trị viên bật Auto Confirm khi tạo tài khoản.";
+  if (/rate limit/i.test(m)) return "Đã gửi quá nhiều email, thử lại sau khoảng 1 giờ (hoặc đăng nhập bằng mật khẩu).";
+  if (/error sending/i.test(m)) return "Máy chủ email chưa gửi được. Hãy đăng nhập bằng mật khẩu.";
+  if (/signups? not allowed|not found/i.test(m)) return "Email này chưa có tài khoản. Nhờ quản trị viên tạo tài khoản cho bạn.";
+  if (/password should be|weak/i.test(m)) return "Mật khẩu quá yếu, cần tối thiểu 8 ký tự.";
+  return m;
+}
 $("#aform").addEventListener("submit", async e => {
   e.preventDefault(); if (Cloud.user) return;
-  const email = $("#a-email").value.trim();
-  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  $("#fd-email").classList.toggle("err", !ok); $("#a-msg").textContent = "Email chưa đúng"; if (!ok) return;
+  const email = $("#a-email").value.trim(), pass = $("#a-pass").value;
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && pass.length > 0;
+  $("#fd-pass").classList.toggle("err", !ok); $("#a-msg").textContent = "Nhập đủ email và mật khẩu"; if (!ok) return;
   const btn = $("#a-send"); btn.classList.add("busy");
+  try { await Cloud.signInPassword(email, pass); $("#a-pass").value = ""; closeAll(); toast("Đã đăng nhập"); }
+  catch(err){ $("#fd-pass").classList.add("err"); $("#a-msg").textContent = authErr(err.message); }
+  finally { btn.classList.remove("busy"); }
+});
+$("#a-magic").addEventListener("click", async () => {
+  const email = $("#a-email").value.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ $("#fd-pass").classList.add("err"); $("#a-msg").textContent = "Nhập email trước rồi bấm gửi link"; return; }
+  const btn = $("#a-magic"); btn.classList.add("busy");
   try { await Cloud.signIn(email); $("#a-in").hidden = true; $("#a-sent").hidden = false; }
-  catch(err){
-    $("#fd-email").classList.add("err");
-    $("#a-msg").textContent = /signups? not allowed|not found|Signups/i.test(err.message) ? "Email này chưa được mời vào hub. Nhờ quản trị viên mời bạn." : "Không gửi được: " + err.message;
-  } finally { btn.classList.remove("busy"); }
+  catch(err){ $("#fd-pass").classList.add("err"); $("#a-msg").textContent = authErr(err.message); }
+  finally { btn.classList.remove("busy"); }
 });
 $("#a-out").addEventListener("click", async () => { await Cloud.signOut(); closeAll(); toast("Đã đăng xuất"); });
 $("#a-save").addEventListener("click", async () => {
-  const n = $("#a-name").value.trim(); if (!n) return;
-  try { await Cloud.rename(n); await loadCloud(); renderAuth(); closeAll(); toast("Đã lưu tên"); } catch(err){ toast("Không lưu được: " + err.message); }
+  const n = $("#a-name").value.trim(), np = $("#a-newpass").value;
+  $("#fd-newpass").classList.toggle("err", !!np && np.length < 8); if (np && np.length < 8) return;
+  try {
+    if (n && n !== Cloud.member?.name){ await Cloud.rename(n); await loadCloud(); renderAuth(); }
+    if (np){ await Cloud.changePassword(np); $("#a-newpass").value = ""; }
+    closeAll(); toast(np ? "Đã lưu và đổi mật khẩu" : "Đã lưu");
+  } catch(err){ toast("Không lưu được: " + authErr(err.message)); }
 });
 async function toWebp(dataUrl, max){
   const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });

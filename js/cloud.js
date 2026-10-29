@@ -31,6 +31,14 @@
     const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: !!CFG.ALLOW_SIGNUP, emailRedirectTo: location.origin + location.pathname } });
     if (error) fail(error);
   };
+  Cloud.signInPassword = async (email, password) => {
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) fail(error);
+  };
+  Cloud.changePassword = async (password) => {
+    const { error } = await sb.auth.updateUser({ password });
+    if (error) fail(error);
+  };
   Cloud.signOut = () => sb.auth.signOut();
   Cloud.ensureMember = async () => {
     const id = Cloud.user.id;
